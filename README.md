@@ -39,9 +39,12 @@ In addition, you'll need to set [`shareProcessNamespace: true` on your Pod](http
 
 `config-reloader-sidecar` is then configured through the following env vars:
 - `CONFIG_DIR`: comma-separated list of configuration directories to watch (mandatory)
-- `PROCESS_NAME`: process to send the signal to (mandatory)
+- `PROCESS_NAME`: process to send the signal to (mandatory unless `PROCESS_PID_FILE` is set)
+- `PROCESS_PID_FILE`: file containing the PID of the process to signal (mandatory unless `PROCESS_NAME` is set)
 - `RELOAD_SIGNAL`: signal to send (optional, defaults to `SIGHUP`)
 - `VERBOSE`: whether to print out all inotify events (optional, defaults to `false`)
+
+`PROCESS_NAME` and `PROCESS_PID_FILE` are mutually exclusive.
 
 ## Example Pod configuration
 

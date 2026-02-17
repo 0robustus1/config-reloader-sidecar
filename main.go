@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -19,8 +20,12 @@ func main() {
 	}
 
 	processName := os.Getenv("PROCESS_NAME")
-	if processName == "" {
-		log.Fatal("mandatory env var PROCESS_NAME is empty, exiting")
+	processPIDFile := os.Getenv("PROCESS_PID_FILE")
+	if processName != "" && processPIDFile != "" {
+		log.Fatal("PROCESS_NAME and PROCESS_PID_FILE are mutually exclusive, exiting")
+	}
+	if processName == "" && processPIDFile == "" {
+		log.Fatal("one of PROCESS_NAME or PROCESS_PID_FILE must be set, exiting")
 	}
 
 	verbose := false
@@ -41,7 +46,7 @@ func main() {
 		}
 	}
 
-	log.Printf("starting with CONFIG_DIR=%s, PROCESS_NAME=%s, RELOAD_SIGNAL=%s\n", configDir, processName, reloadSignal)
+	log.Printf("starting with CONFIG_DIR=%s, PROCESS_NAME=%s, PROCESS_PID_FILE=%s, RELOAD_SIGNAL=%s\n", configDir, processName, processPIDFile, reloadSignal)
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
@@ -61,7 +66,7 @@ func main() {
 				}
 				if event.Op&fsnotify.Chmod != fsnotify.Chmod {
 					log.Println("modified file:", event.Name)
-					err := reloadProcess(processName, reloadSignal)
+					err := reloadProcess(processName, processPIDFile, reloadSignal)
 					if err != nil {
 						log.Println("error:", err)
 					}
@@ -102,8 +107,39 @@ func findPID(process string) (int, error) {
 	return -1, fmt.Errorf("no process matching %s found\n", process)
 }
 
-func reloadProcess(process string, signal syscall.Signal) error {
-	pid, err := findPID(process)
+func pidFromFile(path string) (int, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return -1, fmt.Errorf("failed to read pid file %s: %v", path, err)
+	}
+
+	pidString := strings.TrimSpace(string(content))
+	if pidString == "" {
+		return -1, fmt.Errorf("pid file %s is empty", path)
+	}
+
+	pid, err := strconv.Atoi(pidString)
+	if err != nil {
+		return -1, fmt.Errorf("pid file %s is not a valid integer: %v", path, err)
+	}
+
+	return pid, nil
+}
+
+func getPID(processName, pidFile string) (pid int, err error) {
+	if pidFile != "" {
+		return pidFromFile(pidFile)
+	}
+	return findPID(processName)
+}
+
+func reloadProcess(process string, pidFile string, signal syscall.Signal) error {
+	var (
+		pid int
+		err error
+	)
+
+	pid, err = getPID(process, pidFile)
 	if err != nil {
 		return err
 	}
@@ -111,6 +147,11 @@ func reloadProcess(process string, signal syscall.Signal) error {
 	err = syscall.Kill(pid, signal)
 	if err != nil {
 		return fmt.Errorf("could not send signal: %v\n", err)
+	}
+
+	if pidFile != "" {
+		log.Printf("signal %s sent to pid %d (from %s)\n", signal, pid, pidFile)
+		return nil
 	}
 
 	log.Printf("signal %s sent to %s (pid: %d)\n", signal, process, pid)
