@@ -1,0 +1,12 @@
+defaultBaseImage: gcr.io/distroless/static-debian12:latest
+platforms: all
+
+builds:
+  - id: config-reloader-sidecar
+    dir: .
+    main: .
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -w
+      - -s
